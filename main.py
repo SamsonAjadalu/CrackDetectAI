@@ -2,8 +2,7 @@ import cv2
 import os
 import xml.etree.ElementTree as ET
 import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split  # Still used for splitting data
 
 ANNOTATION_PATH = 'dataset/annotations'
 IMAGE_PATH = 'dataset/images'
@@ -84,19 +83,33 @@ for i, (roi, label) in enumerate(zip(augmented_rois, augmented_labels)):
     print(f"Processed HOG for ROI {i + 1}/{len(augmented_rois)}")
 
 # Convert lists to numpy arrays
-descriptor_array = np.array(descriptor_list)
+descriptor_array = np.array(descriptor_list, dtype=np.float32)
 final_labels = np.array(final_labels)
 
+# Encode labels into integers (OpenCV requires numeric labels)
+unique_labels = {label: idx for idx, label in enumerate(set(final_labels))}
+encoded_labels = np.array([unique_labels[label] for label in final_labels], dtype=np.int32)
+
 # Split data for training and testing
-X_train, X_test, y_train, y_test = train_test_split(descriptor_array, final_labels, test_size=0.3, random_state=42)
+X_train, X_test, y_train, y_test = train_test_split(descriptor_array, encoded_labels, test_size=0.3, random_state=42)
 
-# Initialize k-NN classifier with 1 neighbor
-knn = KNeighborsClassifier(n_neighbors=1)
+# Initialize OpenCV's k-NN model
+knn = cv2.ml.KNearest_create()
 
-# Train k-NN classifier
+# Train the k-NN model
 print("Training k-NN classifier...")
-knn.fit(X_train, y_train)
+knn.train(X_train, cv2.ml.ROW_SAMPLE, y_train)
 
-# Test accuracy
-accuracy = knn.score(X_test, y_test)
-print(f"Model accuracy: {accuracy * 100:.2f}%")
+# Evaluate model
+correct = 0
+total = len(X_test)
+
+for i in range(total):
+    sample = X_test[i].reshape(1, -1)
+    _, results, _, _ = knn.findNearest(sample, k=1)
+    predicted_label = int(results[0][0])
+    if predicted_label == y_test[i]:
+        correct += 1
+
+accuracy = (correct / total) * 100
+print(f"Model accuracy: {accuracy:.2f}%")
